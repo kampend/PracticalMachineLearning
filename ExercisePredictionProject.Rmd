@@ -171,7 +171,10 @@ names(procData)[44] <- "total_accel_forearm"
 procData$classe <- "X"
 procData$sampleSet <- 0
 
-results <- predict(mod, procData)
+# Apply the transform derived from the training set
+transEx <- predict(preprocessParams, procData)
+
+results <- predict(mod, transEx)
 results
 
 ```

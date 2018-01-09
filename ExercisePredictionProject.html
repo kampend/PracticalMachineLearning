@@ -297,12 +297,14 @@ names(procData)[1] &lt;- &quot;user_name&quot;
 names(procData)[31] &lt;- &quot;total_accel_dumbbell&quot;
 names(procData)[44] &lt;- &quot;total_accel_forearm&quot; 
 
-procData$classe&lt;- &quot;X&quot;
+procData$classe &lt;- &quot;X&quot;
 procData$sampleSet &lt;- 0
 
-results &lt;- predict(mod, procData)
+transEx &lt;- predict(preprocessParams, procData)
+
+results &lt;- predict(mod, transEx)
 results</code></pre>
-<pre><code>##  [1] E B B A A E E A B E B B B B E A E A E A
+<pre><code>##  [1] B A B A A E D D A A B C B A E E A B B B
 ## Levels: A B C D E</code></pre>
 </div>
 <div id="conclusion" class="section level2">
