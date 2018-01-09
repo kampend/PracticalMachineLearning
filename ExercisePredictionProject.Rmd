@@ -1,0 +1,190 @@
+---
+title: "Prediction of Physical Exercise Method"
+author: "Kevin Wagg"
+date: "January 6, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Synopsis
+The goal of this analysis is to create a prediction model that determines the manner in which a subject is doing an exercise.  Six subjects performed
+a variety of exercises under the supervision of a trainer.  The subjects wore a variety of measurement devices (accelerometers and gyros) that recorded
+their movements.  These measurements constitute the data being analyzed.  With the guidance of the trainer the subjects performed each exercise in one of 
+five ways.  The five methods are identified in the field "classe" by the letters A through E. We will attempt to create a model that accurately predicts 
+exercise type.
+
+Once a model has been selected it will be used to generate predictions for twenty test cases provided as part of the Prediction Assignment of the 
+Coursera Practical Machine Learning course from Johns Hopkins University.
+
+
+## Data Cleaning
+
+Test data and training data was provied in the files pml-training.csv and pml-testing.csv from the link https://d396qusza40orc.cloudfront.net/predmachlearn.
+Please see the footnote at the bottom of this report for a full description of the source.
+
+Examination of the data indicates that a several columns will be of no use in predicting the outcomes from the test data provided.  Specifically,
+any columns containing the same value for every record in the test set have been removed from both sets.  For example, the "new_window" column 
+had a value of "no" for every record in the test set and therefore will have no predictive value.  Many columns contained mostly NA values and 
+were therefore removed.
+
+
+```{r data cleaning}
+library(caret)
+library(ggplot2)
+
+set.seed(1966)
+
+origData <- read.csv('C:/Users/kevin/Documents/GitHub/MachineLearning/WeightTraining/pml-training.csv')
+
+sourceData <- cbind(origData[,2], origData[,8:11], origData[,37:49], origData[,60:68], origData[,84:86], origData[,102], origData[,113:124], origData[,140], origData[,151:160])
+
+# Names of single extracted columns need to be fixed
+names(sourceData)[1] <- "user_name"
+names(sourceData)[31] <- "total_accel_dumbbell"
+names(sourceData)[44] <- "total_accel_forearm"
+
+```
+
+
+## Data Preprocessing
+
+In an attempt to increase the accuracy of the predictions the training data was first normalized.  Subsequent analysis showed that this had an insignificant 
+effect on the results, increasing the accuracy of the best model on the test data by only 0.03%.  (The effect was larger on poorer performing models.)
+
+The possibility of improving results by removing or combining highly correlated covariates was also examined.  Using the cor() function we identified the 
+list of covariates with a correlation higher than 90%.
+
+
+```{r data normalization}
+
+# Create preprocess parameters from the original data
+preprocessParams  <- preProcess(sourceData, method=c("center", "scale"))
+
+sourceData$sampleSet <- sample(1:6, nrow(sourceData), replace = TRUE)
+
+# Normalize the data to give each accelerometer equal weight
+transformed <- predict(preprocessParams, sourceData)
+
+# Test the corelation in the provided data
+myCor <- abs(cor(transformed[,2:17])) > 0.9
+myCor <- data.frame(myCor)
+
+for(i in 1:nrow(myCor)){
+    for(j in 1:ncol(myCor)){
+        if(myCor[i,j] == TRUE){
+            if (row.names(myCor)[i] != names(myCor)[j]){
+                print(paste(row.names(myCor)[i], names(myCor)[j], format(cor(transformed[,row.names(myCor)[i]], transformed[,names(myCor)[j]]), digits = 2, nsmall = 2), sep = " "))
+            }
+        }
+    }
+}
+
+```
+
+The plot below shows an example of two of the highly correlated normalized covariates: roll_belt and accel_belt.  It wasn't practical to view all corellated values, the table of 
+values above was sufficient for identifying covariates that might be removed or summed or weighted.  
+
+```{r Plot Correlation}
+
+qplot(transformed$roll_belt, transformed$total_accel_belt)
+
+```
+
+In an attempt to improve the model the roll_belt and total_accel_belt covariates were summed and the model was regenerated.  This had no effect on the prediction accuracy using the test set.
+
+The complete removal of the accel_belt_x, accel_belt_y and accel_belt_z covariates was also tested since they were highly correlated with other covariates.  This also had no effect on the 
+prediction accuracy using the test set.
+
+
+## Create Training, Test and Validation Data Sets
+
+Once the above transformations were complete the original training data set was divided into separate training, test and validation sets.  The test 
+and validation sets each represented approximately one sixth of the original data set selected at random.  The remaining data became the training 
+set used to find the optimum model.
+
+
+```{r Data Set Creation}
+
+# Create training, test and validation data sets
+fTrain <- transformed[transformed$sampleSet < 5,]
+fTest <- transformed[transformed$sampleSet == 5,]
+fValidation <- transformed[transformed$sampleSet == 6,]
+
+```
+
+## Model Generation and Testing
+
+A total of five different models were tested.  For every model cross validation was done as part of the train method 
+by implementing the trControl option.  The code for creating each model is below.  (Only the Bagged CART code is
+uncommented below since it was easily the best model.  Each can be tested by removing the comment and then executing
+the "predict"" and "confusionMatrix"" commands that follow.)
+
+```{r Model Testing}
+mod <- train(classe ~ . -sampleSet, data = fTrain, method = "treebag", trControl = trainControl(method = "cv", number = 5))
+#mod <- train(classe ~ . -sampleSet, data = fTrain, method = "pls", trControl = trainControl(method = "cv", number = 5))
+#mod <- train(classe ~ . -sampleSet, data = fTrain, method = "rpart", trControl = trainControl(method = "cv", number = 5))
+#mod <- train(classe ~ . -sampleSet, data = fTrain, method = "amdai", trControl = trainControl(method = "cv", number = 5))
+#mod <- train(classe ~ . -sampleSet, data = fTrain, method = "ctree", trControl = trainControl(method = "cv", number = 5))
+
+results <- predict(mod, fTest)
+confusionMatrix(results, fTest$classe)
+
+```
+
+The output of the confusionMatrix command indicates that the Bagged CART model predicts the exercise type with over 98% accuracy.
+The other models weren't as accurate.  They performed as follows:
+
+Partial Least Squares ("pls"): Accuracy: 39.02%
+CART ("rpart""): 49.92%
+Adaptive Mixture Discriminent Analysis ("amdai"): 73.5%
+ctree: 88.82%
+
+
+## Validation
+
+Having now selected the Bagged CART model as the most accurate, it will be tested once against the validation data set.
+
+
+```{r Model Validation}
+results <- predict(mod, fValidation)
+confusionMatrix(results, fValidation$classe)
+
+```
+
+The model provides 98% prediction accuracy using the validation data.  We can proceed with confidence to predict the outcomes of the exercise data.
+The predictions are below.
+
+
+```{r Prediction Exercise}
+
+exerciseData <- read.csv('C:/Users/kevin/Documents/GitHub/MachineLearning/WeightTraining/pml-testing.csv')
+
+procData <- cbind(exerciseData[,2], exerciseData[,8:11], exerciseData[,37:49], exerciseData[,60:68], exerciseData[,84:86], exerciseData[,102], exerciseData[,113:124], exerciseData[,140], exerciseData[,151:159])
+
+# Names of single extracted columns need to be fixed
+names(procData)[1] <- "user_name"
+names(procData)[31] <- "total_accel_dumbbell"
+names(procData)[44] <- "total_accel_forearm" 
+
+procData$classe <- "X"
+procData$sampleSet <- 0
+
+results <- predict(mod, procData)
+results
+
+```
+## Conclusion
+
+The Bagged CART model performed best yielding a 98% accuracy predicting which type of exercise was being done.
+
+## Footnote
+
+Data for this analysis was provided by: Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements. Proceedings of 21st Brazilian Symposium on Artificial Intelligence. Advances in Artificial Intelligence - SBIA 2012. In: Lecture Notes in Computer Science. , pp. 52-61. Curitiba, PR: Springer Berlin / Heidelberg, 2012. ISBN 978-3-642-34458-9. DOI: 10.1007/978-3-642-34459-6_6.
+
+The data was made available here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har
+
+
+
+
